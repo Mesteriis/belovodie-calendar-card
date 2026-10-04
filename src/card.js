@@ -9,10 +9,11 @@ import es from '@fullcalendar/core/locales/es';
 import { DateTime } from 'luxon';
 import { VIEWS,validateConfig,dayKey,shiftDay,eventsOnDay,fetchCalendars } from './calendar-model.js';
 import styles from './card.css';
+import vendorStyles from './vendor-calendar.css';
 
 class BelovodieCalendarCard extends LitElement {
   static properties = { _config:{state:true},_view:{state:true},_selected:{state:true},_events:{state:true},_loading:{state:true},_failed:{state:true},_hidden:{state:true},_detail:{state:true},_revision:{state:true} };
-  static styles=[css`${unsafeCSS(styles)}`];
+  static styles=[css`${unsafeCSS(vendorStyles)}`,css`${unsafeCSS(styles)}`];
   constructor() {
     super();this._events=[];this._failed=[];this._hidden=new Set();this._loading=false;this._requestId=0;this._revision=0;
     this._onVisibility=()=>{if(document.visibilityState==='visible')this._load();};
@@ -95,7 +96,7 @@ class BelovodieCalendarCard extends LitElement {
     const day=DateTime.fromISO(this._selected,{zone:this._zone()}).setLocale(this._locale());
     if (this._view==='month') return day.toFormat('LLLL yyyy');
     if (this._view==='week') {const start=day.startOf('week');return `${start.toFormat('d LLL')} — ${start.plus({days:6}).toFormat('d LLL yyyy')}`;}
-    return day.toFormat('cccc, d LLLL yyyy');
+    return day.toFormat('cccc, d MMMM yyyy');
   }
   _agenda(key,label) {
     const events=eventsOnDay(this._events.filter(e=>!this._hidden.has(e.extendedProps.source)),key,this._zone());
@@ -111,7 +112,7 @@ class BelovodieCalendarCard extends LitElement {
     return html`<dialog @cancel=${()=>{this._detail=null;}} @click=${e=>{if(e.target===e.currentTarget)this._closeDetail();}}>
       <header><h2>${event.title}</h2><button aria-label="Закрыть событие" @click=${this._closeDetail}><ha-icon icon="mdi:close"></ha-icon></button></header>
       <p class="source-name" style=${`color:${event.extendedProps.color}`}>${this._name(event.extendedProps.source)}</p>
-      <p>${DateTime.fromMillis(event.startMs,{zone:this._zone()}).setLocale(this._locale()).toFormat('cccc, d LLLL yyyy')} · ${this._time(event)}${event.allDay?'':` — ${DateTime.fromMillis(event.endMs,{zone:this._zone()}).toFormat('HH:mm')}`}</p>
+      <p>${DateTime.fromMillis(event.startMs,{zone:this._zone()}).setLocale(this._locale()).toFormat('cccc, d MMMM yyyy')} · ${this._time(event)}${event.allDay?'':` — ${DateTime.fromMillis(event.endMs,{zone:this._zone()}).toFormat('HH:mm')}`}</p>
       ${event.extendedProps.location?html`<p><ha-icon icon="mdi:map-marker-outline"></ha-icon> ${event.extendedProps.location}</p>`:nothing}
       ${event.extendedProps.description?html`<p class="description">${event.extendedProps.description}</p>`:nothing}
     </dialog>`;
@@ -129,8 +130,8 @@ class BelovodieCalendarCard extends LitElement {
         <div id="calendar" aria-label="Сетка календаря" aria-busy=${String(this._loading)}></div>
       </main>
       <aside><div class="view-switch" role="group" aria-label="Вид календаря">${Object.keys(VIEWS).map(view=>html`<button aria-pressed=${String(view===this._view)} @click=${()=>this._setView(view)}>${{day:'День',week:'Неделя',month:'Месяц'}[view]}</button>`)}</div>
-        <div class="agenda-scroll">${this._agenda(this._selected,this._selected===dayKey(new Date(),this._zone())?'Сегодня':DateTime.fromISO(this._selected,{zone:this._zone()}).setLocale(this._locale()).toFormat('d LLLL'))}
-        ${this._agenda(tomorrow,`Следующий день · ${DateTime.fromISO(tomorrow,{zone:this._zone()}).setLocale(this._locale()).toFormat('d LLLL')}`)}</div>
+        <div class="agenda-scroll">${this._agenda(this._selected,this._selected===dayKey(new Date(),this._zone())?'Сегодня':DateTime.fromISO(this._selected,{zone:this._zone()}).setLocale(this._locale()).toFormat('d MMMM'))}
+        ${this._agenda(tomorrow,`Следующий день · ${DateTime.fromISO(tomorrow,{zone:this._zone()}).setLocale(this._locale()).toFormat('d MMMM')}`)}</div>
       </aside></div>${this._dialog()}</ha-card>`;
   }
   getCardSize() {return 8;}

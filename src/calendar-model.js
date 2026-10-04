@@ -42,11 +42,14 @@ export function eventsOnDay(events,key,zone) {
 export function normalizeEvents(raw,source,zone) {
   if (!Array.isArray(raw)) throw new Error('Invalid calendar response');
   return raw.map((event,index)=>{
-    if (!event || typeof event.start!=='string' || typeof event.end!=='string') throw new Error('Invalid event dates');
-    const start=DateTime.fromISO(event.start,{zone}),end=DateTime.fromISO(event.end,{zone});
+    if (!event) throw new Error('Invalid event');
+    const startValue=typeof event.start==='string'?event.start:event.start?.dateTime || event.start?.date;
+    const endValue=typeof event.end==='string'?event.end:event.end?.dateTime || event.end?.date;
+    if (typeof startValue!=='string' || typeof endValue!=='string') throw new Error('Invalid event dates');
+    const start=DateTime.fromISO(startValue,{zone}),end=DateTime.fromISO(endValue,{zone});
     if (!start.isValid || !end.isValid || end.toMillis()<=start.toMillis()) throw new Error('Invalid event interval');
-    return {id:`${source.entity}:${index}:${event.start}`,title:event.summary || 'Без названия',start:event.start,end:event.end,
-      startMs:start.toMillis(),endMs:end.toMillis(),allDay:event.all_day===true || /^\d{4}-\d{2}-\d{2}$/.test(event.start),
+    return {id:`${source.entity}:${index}:${startValue}`,title:event.summary || 'Без названия',start:startValue,end:endValue,
+      startMs:start.toMillis(),endMs:end.toMillis(),allDay:event.all_day===true || /^\d{4}-\d{2}-\d{2}$/.test(startValue),
       backgroundColor:`${source.color}30`,borderColor:source.color,textColor:'#dceef5',
       extendedProps:{source:source.entity,color:source.color,location:typeof event.location==='string'?event.location:'',description:typeof event.description==='string'?event.description:''}};
   });
