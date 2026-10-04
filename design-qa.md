@@ -28,7 +28,7 @@ No remaining actionable P0/P1/P2 issues in the tested states.
 - Date navigation, all three views, source filters retained across switches, selecting a month date then switching to day.
 - Event details opened with Enter and closed; native dialog with escaped text.
 - No calendar-specific console errors observed. Existing unrelated frontend warnings are outside this package.
-- Seven model tests passed; build passed; bundled installed artifact hash matched the release candidate.
+- Nine model tests passed; build passed; bundled installed artifact hash matched the release candidate.
 
 **Open Questions**
 None blocking. Provider content differs intentionally from illustrative source data.
@@ -42,5 +42,15 @@ None blocking. Provider content differs intentionally from illustrative source d
 
 **Follow-up Polish**
 P3: optional selected-date highlighting in month view; selected date is already shown in the sidebar.
+
+final result: passed
+
+## v0.1.1 provider removal follow-up
+
+- Earlier P1: a calendar removed at the provider remained in the configured source filters and produced a failed event query.
+- Fix: read the successful native inventory before querying sources, remove absent sources from filters and event queries, and retain sources if the inventory request itself fails. CalDAV inventory refresh is provided as a separate native automation example.
+- Live evidence: configured removed source vanished without changing the original card source configuration; error count became zero. CalDAV refresh automation was loaded and triggered successfully; the native inventory retained all five selected active sources and omitted the deleted one.
+- Owner-label comparison: `.local/comparison-owners.png`, source and implementation opened together. Capture `.local/calendar-owners-final.png` at 1090 × 966 CSS/pixels, browser DPR 2.08; native screenshot already normalized to viewport pixels. Card crop 784 × 560, no stretching. Main grid/sidebar proportions preserved; a fifth filter wraps naturally. Names and live events differ intentionally from illustrative mock data.
+- Fonts, spacing, colors, standard icons and content checked again. No new actionable P0/P1/P2 visual findings; provider removal and inventory outage regression tests passed.
 
 final result: passed
