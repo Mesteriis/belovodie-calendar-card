@@ -12,14 +12,14 @@ import styles from './card.css';
 import vendorStyles from './vendor-calendar.css';
 
 class BelovodieCalendarCard extends LitElement {
-  static properties = { _config:{state:true},_view:{state:true},_selected:{state:true},_events:{state:true},_loading:{state:true},_failed:{state:true},_hidden:{state:true},_detail:{state:true},_revision:{state:true} };
+  static properties = { _config:{state:true},_view:{state:true},_selected:{state:true},_events:{state:true},_loading:{state:true},_failed:{state:true},_hidden:{state:true},_detail:{state:true},_revision:{state:true},_sources:{state:true},_inventoryFailed:{state:true} };
   static styles=[css`${unsafeCSS(vendorStyles)}`,css`${unsafeCSS(styles)}`];
   constructor() {
     super();this._events=[];this._failed=[];this._hidden=new Set();this._loading=false;this._requestId=0;this._revision=0;
     this._onVisibility=()=>{if(document.visibilityState==='visible')this._load();};
   }
   setConfig(config) {
-    this._config=validateConfig(config);this._view=this._config.default_view;
+    this._config=validateConfig(config);this._view=this._config.default_view;this._sources=this._config.entities;this._inventoryFailed=false;
     this._resize?.disconnect();this._calendar?.destroy();this._calendar=null;this._range=null;this._requestId++;
     this._selected=dayKey(new Date(),this._zone());this._hidden=new Set();
     this.style.height=this._config.height;this.requestUpdate();
@@ -74,7 +74,7 @@ class BelovodieCalendarCard extends LitElement {
     this._loading=true;
     const result=await fetchCalendars(this._hass,this._config.entities,{...this._range,end},zone);
     if (requestId!==this._requestId || !this.isConnected) return;
-    this._events=result.events;this._failed=result.failed;this._loading=false;this._applyEvents();
+    this._events=result.events;this._failed=result.failed;this._sources=result.sources;this._inventoryFailed=result.inventoryFailed;this._loading=false;this._applyEvents();
   }
   _applyEvents() {
     if (!this._calendar) return;
@@ -125,9 +125,11 @@ class BelovodieCalendarCard extends LitElement {
       <main><header class="calendar-header"><h2>${this._dateTitle()}</h2><nav aria-label="Дата календаря">
         <button aria-label="Предыдущий период" @click=${()=>this._navigate(-1)}><ha-icon icon="mdi:chevron-left"></ha-icon></button>
         <button @click=${this._today}>Сегодня</button><button aria-label="Следующий период" @click=${()=>this._navigate(1)}><ha-icon icon="mdi:chevron-right"></ha-icon></button></nav></header>
-        <div class="sources" role="group" aria-label="Календари">${this._config.entities.map(source=>html`<button class="source" aria-pressed=${String(!this._hidden.has(source.entity))} @click=${()=>this._toggle(source.entity)}>
+        <div class="sources" role="group" aria-label="Календари">${this._sources.map(source=>html`<button class="source" aria-pressed=${String(!this._hidden.has(source.entity))} @click=${()=>this._toggle(source.entity)}>
           <ha-icon icon=${this._hidden.has(source.entity)?'mdi:checkbox-blank-outline':'mdi:checkbox-marked'} style=${`color:${source.color}`}></ha-icon><span>${this._name(source.entity)}</span></button>`)}</div>
         ${this._failed.length?html`<div class="error" role="status">Не удалось загрузить: ${this._failed.map(entity=>this._name(entity)).join(', ')} <button @click=${this._load}>Повторить</button></div>`:nothing}
+        ${this._inventoryFailed?html`<div class="error" role="status">Не удалось обновить список календарей <button @click=${this._load}>Повторить</button></div>`:nothing}
+        ${!this._sources.length && !this._loading?html`<p class="empty">Нет подключённых календарей</p>`:nothing}
         <div id="calendar" aria-label="Сетка календаря" aria-busy=${String(this._loading)}></div>
       </main>
       <aside><div class="view-switch" role="group" aria-label="Вид календаря">${Object.keys(VIEWS).map(view=>html`<button aria-pressed=${String(view===this._view)} @click=${()=>this._setView(view)}>${{day:'День',week:'Неделя',month:'Месяц'}[view]}</button>`)}</div>

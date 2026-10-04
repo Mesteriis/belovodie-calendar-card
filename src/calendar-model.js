@@ -57,8 +57,17 @@ export function normalizeEvents(raw,source,zone) {
 
 // Partial failures remain visible. A failed source never turns into an empty successful calendar.
 export async function fetchCalendars(hass,sources,range,zone) {
+  // The native list contains loaded calendar entities; restored registry ghosts
+  // are absent after the provider integration refreshes its inventory.
+  let active=sources,inventoryFailed=false;
+  try {
+    const inventory=await hass.callApi('GET','calendars');
+    if (!Array.isArray(inventory) || inventory.some(item=>!item || typeof item.entity_id!=='string')) throw new Error('Invalid calendar inventory');
+    const existing=new Set(inventory.map(item=>item.entity_id));
+    active=sources.filter(source=>existing.has(source.entity));
+  } catch { inventoryFailed=true; }
   const query=new URLSearchParams({start:range.start,end:range.end});
-  const results=await Promise.allSettled(sources.map(async source=>normalizeEvents(await hass.callApi('GET',`calendars/${source.entity}?${query}`),source,zone)));
+  const results=await Promise.allSettled(active.map(async source=>normalizeEvents(await hass.callApi('GET',`calendars/${source.entity}?${query}`),source,zone)));
   return {events:results.flatMap(result=>result.status==='fulfilled'?result.value:[]),
-    failed:sources.filter((_,i)=>results[i].status==='rejected').map(source=>source.entity)};
+    failed:active.filter((_,i)=>results[i].status==='rejected').map(source=>source.entity),sources:active,inventoryFailed};
 }

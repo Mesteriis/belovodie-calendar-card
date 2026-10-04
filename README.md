@@ -40,3 +40,11 @@ The root JS bundle is committed and published as a GitHub release asset. Calenda
 ## Existing-card research
 
 Reviewed [Daylight Calendar Card](https://github.com/superdingo101/daylight-calendar-card), [FullCalendar Hass Card](https://github.com/sancons20/fullcalendar-hass-card), and [Month Calendar Card](https://github.com/drmogie/ha-month-calendar-card) before implementation. Those provide useful calendar views; this separate package implements the selected Belovodie composition with a shared day/week/month state, persistent source filters within the card, and a selected-day sidebar. The calendar engine is reused through the official FullCalendar packages rather than reimplementing time-grid rendering.
+
+## Provider calendar removal
+
+Each refresh first reads the native `/api/calendars` inventory. Configured calendars absent from that successful inventory disappear from the source filters and event queries. Temporary inventory failures preserve the configured calendars and show a retryable message; an event fetch failure does not mean the source was deleted.
+
+CalDAV discovers provider calendars when its integration loads. For automatic provider inventory updates, merge [examples/caldav-refresh.yaml](examples/caldav-refresh.yaml) into your Home Assistant automation configuration. It reloads only CalDAV entries every 15 minutes, without changing credentials or deleting calendars at the provider. The card refreshes every five minutes and on entity changes. A provider deletion can therefore take an inventory refresh to appear. Home Assistant may retain an unavailable entity registry record; the card no longer queries or displays it.
+
+Use `name` to identify people, for example `Alex · Personal`, `Vika · Work`, or `Shared · Family`. Include shared calendars once to avoid duplicate events.

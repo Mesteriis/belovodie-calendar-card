@@ -37,7 +37,21 @@ test('native Home Assistant date and dateTime objects normalize correctly',()=>{
   assert.equal(eventsOnDay(events,'2026-10-05',zone).length,1);
 });
 test('partial source failure is reported while successful events survive',async()=>{
-  const hass={callApi:async(method,path)=>{assert.equal(method,'GET');if(path.includes('calendar.bad'))throw Error('offline');return [{summary:'Event',start:'2026-10-04',end:'2026-10-05'}];}};
+  const hass={callApi:async(method,path)=>{assert.equal(method,'GET');if(path==='calendars')return [{entity_id:source.entity},{entity_id:'calendar.bad'}];if(path.includes('calendar.bad'))throw Error('offline');return [{summary:'Event',start:'2026-10-04',end:'2026-10-05'}];}};
   const result=await fetchCalendars(hass,[source,{entity:'calendar.bad',color:'#ffaaaa'}],dayRange('2026-10-04',zone),zone);
   assert.equal(result.events.length,1);assert.deepEqual(result.failed,['calendar.bad']);
+});
+test('removed calendar disappears without querying its stale registry entity',async()=>{
+  const stale={entity:'calendar.deleted',color:'#ffaaaa'},paths=[];
+  const hass={callApi:async(method,path)=>{paths.push(path);return path==='calendars'?[{entity_id:source.entity}]:[];}};
+  const result=await fetchCalendars(hass,[source,stale],dayRange('2026-10-04',zone),zone);
+  assert.deepEqual(result.sources,[source]);assert.deepEqual(result.failed,[]);
+  assert.equal(paths.some(path=>path.includes(stale.entity)),false);
+  assert.equal(result.inventoryFailed,false);
+});
+test('inventory outage retains configured calendars and exposes the failure',async()=>{
+  const hass={callApi:async(method,path)=>{if(path==='calendars')throw Error('network');return [];}};
+  const result=await fetchCalendars(hass,[source],dayRange('2026-10-04',zone),zone);
+  assert.deepEqual(result.sources,[source]);assert.equal(result.inventoryFailed,true);
+  assert.deepEqual(result.failed,[]);
 });
