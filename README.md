@@ -25,6 +25,8 @@ View changes preserve the selected date and source filters for the lifetime of t
 
 The card fills its configured height; calendar and agenda can scroll internally. At narrow widths the agenda collapses, leaving the calendar and view switch accessible. CSS variables `--bc-calendar-surface`, `--bc-calendar-text`, and `--bc-calendar-border` override the default dark teal appearance.
 
+Inside Belovodie Dashboard the inherited `--bc-ui-scale` automatically compensates FullCalendar geometry for panel zoom. Other zoomed hosts can supply `--bc-calendar-scale` with their effective CSS zoom factor. Ordinary unzoomed hosts need no setting. Browser zoom does not need compensation.
+
 ## Development
 
 ```sh

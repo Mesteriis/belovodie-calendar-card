@@ -59,6 +59,7 @@ class BelovodieCalendarCard extends LitElement {
       slotDuration:'01:00:00',slotLabelInterval:'01:00:00',slotLabelFormat:{hour:'2-digit',minute:'2-digit',hour12:false},
       eventTimeFormat:{hour:'2-digit',minute:'2-digit',hour12:false},dayMaxEvents:true,fixedWeekCount:false,
       displayEventEnd:true,eventClick:arg=>{arg.jsEvent.preventDefault();this._openEvent(arg.event.id);},
+      eventDidMount:arg=>{arg.el.tabIndex=0;arg.el.setAttribute('role','button');arg.el.setAttribute('aria-label',arg.event.title);arg.el.addEventListener('keydown',event=>{if(event.key==='Enter' || event.key===' '){event.preventDefault();this._openEvent(arg.event.id);}});},
       dateClick:arg=>{this._selected=dayKey(arg.date,this._zone());this._load();},
       datesSet:arg=>{this._range={start:arg.startStr,end:arg.endStr};this._load();}
     });
