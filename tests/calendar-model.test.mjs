@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { validateConfig,normalizeEvents,eventsOnDay,dayRange,shiftDay,fetchCalendars } from '../src/calendar-model.js';
+import * as calendarModel from '../src/calendar-model.js';
 const zone='Europe/Madrid';
 const source={entity:'calendar.example',color:'#48c7ef'};
 test('config rejects non-calendar, duplicates and injectable CSS',()=>{
@@ -54,4 +55,54 @@ test('inventory outage retains configured calendars and exposes the failure',asy
   const result=await fetchCalendars(hass,[source],dayRange('2026-10-04',zone),zone);
   assert.deepEqual(result.sources,[source]);assert.equal(result.inventoryFailed,true);
   assert.deepEqual(result.failed,[]);
+});
+
+const bridgeAttributes={local_health:'complete',remote_health:'unknown',stale:false,last_successful_sync:'2026-03-29T09:00:00+02:00',range_start:'2026-03-29T00:00:00+01:00',range_end:'2026-03-30T00:00:00+02:00'};
+function bridgeHass(attributes,raw=[]) {
+  const queries=[];
+  return {queries,states:{[source.entity]:{attributes}},callApi:async(method,path)=>{
+    if(path==='calendars')return [{entity_id:source.entity}];
+    queries.push(new URLSearchParams(path.split('?')[1]));return raw;
+  }};
+}
+test('bounded snapshot intersects wider view with its DST-aware exported window',async()=>{
+  const hass=bridgeHass(bridgeAttributes,[{summary:'Retained',start:'2026-03-29',end:'2026-03-30'}]);
+  const result=await fetchCalendars(hass,[source],{start:'2026-03-28T00:00:00+01:00',end:'2026-03-31T00:00:00+02:00'},zone);
+  assert.equal(hass.queries[0].get('start'),bridgeAttributes.range_start);
+  assert.equal(hass.queries[0].get('end'),bridgeAttributes.range_end);
+  assert.equal(result.events.length,1);assert.deepEqual(result.failed,[]);
+  assert.equal(result.statuses[source.entity].coverage,'partial');
+});
+test('out-of-window dates never query snapshot or masquerade as covered emptiness',async()=>{
+  const hass=bridgeHass(bridgeAttributes);
+  const result=await fetchCalendars(hass,[source],dayRange('2026-03-30',zone),zone);
+  assert.equal(hass.queries.length,0);assert.deepEqual(result.events,[]);
+  assert.equal(result.statuses[source.entity].coverage,'none');
+});
+test('failed local read exposes last success and stale state while cached originals survive',async()=>{
+  const hass=bridgeHass({...bridgeAttributes,local_health:'failed',stale:true},[{summary:'Retained',start:'2026-03-29',end:'2026-03-30'}]);
+  const result=await fetchCalendars(hass,[source],dayRange('2026-03-29',zone),zone);
+  assert.equal(result.events[0].title,'Retained');assert.deepEqual(result.failed,[]);
+  assert.equal(result.statuses[source.entity].localHealth,'failed');assert.equal(result.statuses[source.entity].stale,true);
+  assert.equal(result.statuses[source.entity].lastSuccessfulSync,bridgeAttributes.last_successful_sync);
+});
+test('snapshot without successful range stays uncovered and ordinary calendars remain unbounded',async()=>{
+  for(const attributes of [{local_health:'missing',range_start:null,range_end:null},{...bridgeAttributes,range_end:'invalid'}]) {
+    const hass=bridgeHass(attributes),result=await fetchCalendars(hass,[source],dayRange('2026-03-29',zone),zone);
+    assert.equal(hass.queries.length,0);assert.equal(result.statuses[source.entity].coverage,'none');
+  }
+  const hass=bridgeHass({friendly_name:'CalDAV'}),range=dayRange('2026-03-29',zone);
+  const result=await fetchCalendars(hass,[source],range,zone);
+  assert.equal(hass.queries[0].get('start'),range.start);assert.equal(hass.queries[0].get('end'),range.end);
+  assert.equal(result.statuses[source.entity].coverage,'complete');
+});
+
+test('status warnings use selected-day coverage and keep stale/failure separate',()=>{
+  assert.equal(typeof calendarModel.calendarWarnings,'function','warning classification must be available');
+  const {calendarWarnings}=calendarModel;
+  const status={bounded:true,rangeStart:bridgeAttributes.range_start,rangeEnd:bridgeAttributes.range_end,localHealth:'failed',stale:true};
+  assert.deepEqual(calendarWarnings(status,dayRange('2026-03-29',zone),zone),['failed','stale']);
+  assert.deepEqual(calendarWarnings(status,dayRange('2026-03-30',zone),zone),['failed','stale','none']);
+  assert.deepEqual(calendarWarnings({...status,localHealth:'complete',stale:false},{start:'2026-03-28T00:00:00+01:00',end:'2026-03-31T00:00:00+02:00'},zone),['partial']);
+  assert.deepEqual(calendarWarnings({bounded:false},dayRange('2026-03-29',zone),zone),[]);
 });

@@ -47,4 +47,15 @@ Each refresh first reads the native `/api/calendars` inventory. Configured calen
 
 CalDAV discovers provider calendars when its integration loads. For automatic provider inventory updates, merge [examples/caldav-refresh.yaml](examples/caldav-refresh.yaml) into your Home Assistant automation configuration. It reloads only CalDAV entries every 15 minutes, without changing credentials or deleting calendars at the provider. The card refreshes every five minutes and on entity changes. A provider deletion can therefore take an inventory refresh to appear. Home Assistant may retain an unavailable entity registry record; the card no longer queries or displays it.
 
-Use `name` to identify people, for example `Alex · Personal`, `Vika · Work`, or `Shared · Family`. Include shared calendars once to avoid duplicate events.
+Use `name` to identify people, for example `Owner · Personal`, `Owner · Work`, or `Shared · Family`. Include shared calendars once to avoid duplicate events.
+
+## Bounded bridge snapshots
+
+Sources exposing `range_start`/`range_end` are queried only for the intersection
+with the selected view. Compact source status chips show partial/no coverage,
+stale copies, failed/missing local reads, and the last successful local timestamp.
+Retained snapshot originals remain visible during a failed local read. Dates beyond
+coverage are never presented as trustworthy empty calendars; the day agenda uses
+that day's coverage independently of the wider grid. Ordinary calendar integrations
+without explicit bounds keep their normal date queries. These states describe
+local exported data and do not establish cloud account freshness.

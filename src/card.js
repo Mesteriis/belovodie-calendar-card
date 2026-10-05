@@ -7,19 +7,19 @@ import luxonPlugin from '@fullcalendar/luxon3';
 import ru from '@fullcalendar/core/locales/ru';
 import es from '@fullcalendar/core/locales/es';
 import { DateTime } from 'luxon';
-import { VIEWS,validateConfig,dayKey,shiftDay,eventsOnDay,fetchCalendars } from './calendar-model.js';
+import { VIEWS,validateConfig,dayKey,shiftDay,eventsOnDay,fetchCalendars,dayRange,calendarWarnings } from './calendar-model.js';
 import styles from './card.css';
 import vendorStyles from './vendor-calendar.css';
 
 class BelovodieCalendarCard extends LitElement {
-  static properties = { _config:{state:true},_view:{state:true},_selected:{state:true},_events:{state:true},_loading:{state:true},_failed:{state:true},_hidden:{state:true},_detail:{state:true},_revision:{state:true},_sources:{state:true},_inventoryFailed:{state:true} };
+  static properties = { _config:{state:true},_view:{state:true},_selected:{state:true},_events:{state:true},_loading:{state:true},_failed:{state:true},_hidden:{state:true},_detail:{state:true},_revision:{state:true},_sources:{state:true},_inventoryFailed:{state:true},_statuses:{state:true} };
   static styles=[css`${unsafeCSS(vendorStyles)}`,css`${unsafeCSS(styles)}`];
   constructor() {
-    super();this._events=[];this._failed=[];this._hidden=new Set();this._loading=false;this._requestId=0;this._revision=0;
+    super();this._statuses={};this._events=[];this._failed=[];this._hidden=new Set();this._loading=false;this._requestId=0;this._revision=0;
     this._onVisibility=()=>{if(document.visibilityState==='visible')this._load();};
   }
   setConfig(config) {
-    this._config=validateConfig(config);this._view=this._config.default_view;this._sources=this._config.entities;this._inventoryFailed=false;
+    this._config=validateConfig(config);this._view=this._config.default_view;this._sources=this._config.entities;this._inventoryFailed=false;this._statuses={};
     this._resize?.disconnect();this._calendar?.destroy();this._calendar=null;this._range=null;this._requestId++;
     this._selected=dayKey(new Date(),this._zone());this._hidden=new Set();
     this.style.height=this._config.height;this.requestUpdate();
@@ -74,7 +74,7 @@ class BelovodieCalendarCard extends LitElement {
     this._loading=true;
     const result=await fetchCalendars(this._hass,this._config.entities,{...this._range,end},zone);
     if (requestId!==this._requestId || !this.isConnected) return;
-    this._events=result.events;this._failed=result.failed;this._sources=result.sources;this._inventoryFailed=result.inventoryFailed;this._loading=false;this._applyEvents();
+    this._statuses=result.statuses;this._events=result.events;this._failed=result.failed;this._sources=result.sources;this._inventoryFailed=result.inventoryFailed;this._loading=false;this._applyEvents();
   }
   _applyEvents() {
     if (!this._calendar) return;
@@ -102,11 +102,21 @@ class BelovodieCalendarCard extends LitElement {
   _agenda(key,label) {
     const events=eventsOnDay(this._events.filter(e=>!this._hidden.has(e.extendedProps.source)),key,this._zone());
     const failed=this._failed.filter(entity=>!this._hidden.has(entity));
+    const warnings=this._sources.filter(source=>!this._hidden.has(source.entity)).flatMap(source=>calendarWarnings(this._statuses[source.entity],dayRange(key,this._zone()),this._zone()));
+    const emptyMessage=failed.length?'События части календарей недоступны':warnings.includes('none')?'Нет покрытия части календарей':warnings.includes('partial')?'Неполное покрытие дня':warnings.length?'Нет событий в сохранённой копии':'Нет событий';
     return html`<section class="agenda-section"><h3>${label}</h3>${events.length?events.map(event=>html`
       <button class="agenda-event ${event.endMs<Date.now()?'past':''}" @click=${()=>this._openEvent(event.id)}>
         <span class="event-time">${this._time(event)}${event.allDay?nothing:html`<small>${DateTime.fromMillis(event.endMs,{zone:this._zone()}).toFormat('HH:mm')}</small>`}</span>
         <span class="event-copy" style=${`border-color:${event.extendedProps.color}`}><strong>${event.title}</strong><small>${this._name(event.extendedProps.source)}</small></span><ha-icon icon="mdi:chevron-right"></ha-icon>
-      </button>`):html`<p class="empty">${this._loading?'Загружаю события…':failed.length?'События части календарей недоступны':'Нет событий'}</p>`}</section>`;
+      </button>`):html`<p class="empty">${this._loading?'Загружаю события…':emptyMessage}</p>`}</section>`;
+  }
+  _sourceStatus(source) {
+    if(!this._range)return nothing;
+    const status=this._statuses[source.entity],warnings=calendarWarnings(status,this._range,this._zone());
+    if(!warnings.length)return nothing;
+    const labels={failed:'Ошибка чтения',missing:'Нет локально',stale:'Устарело',partial:'Частичное покрытие',none:'Нет покрытия'};
+    const last=status?.lastSuccessfulSync?DateTime.fromISO(status.lastSuccessfulSync,{zone:this._zone()}):null;
+    return html`<small class="source-status" role="status">${warnings.map(code=>labels[code]).join(' · ')}${last?.isValid?html` · <time datetime=${status.lastSuccessfulSync} title="Последнее успешное локальное чтение">${last.toFormat('dd.LL HH:mm')}</time>`:nothing}</small>`;
   }
   _dialog() {
     const event=this._detail;if(!event)return nothing;
@@ -126,7 +136,7 @@ class BelovodieCalendarCard extends LitElement {
         <button aria-label="Предыдущий период" @click=${()=>this._navigate(-1)}><ha-icon icon="mdi:chevron-left"></ha-icon></button>
         <button @click=${this._today}>Сегодня</button><button aria-label="Следующий период" @click=${()=>this._navigate(1)}><ha-icon icon="mdi:chevron-right"></ha-icon></button></nav></header>
         <div class="sources" role="group" aria-label="Календари">${this._sources.map(source=>html`<button class="source" aria-pressed=${String(!this._hidden.has(source.entity))} @click=${()=>this._toggle(source.entity)}>
-          <ha-icon icon=${this._hidden.has(source.entity)?'mdi:checkbox-blank-outline':'mdi:checkbox-marked'} style=${`color:${source.color}`}></ha-icon><span>${this._name(source.entity)}</span></button>`)}</div>
+          <ha-icon icon=${this._hidden.has(source.entity)?'mdi:checkbox-blank-outline':'mdi:checkbox-marked'} style=${`color:${source.color}`}></ha-icon><span>${this._name(source.entity)}</span>${this._sourceStatus(source)}</button>`)}</div>
         ${this._failed.length?html`<div class="error" role="status">Не удалось загрузить: ${this._failed.map(entity=>this._name(entity)).join(', ')} <button @click=${this._load}>Повторить</button></div>`:nothing}
         ${this._inventoryFailed?html`<div class="error" role="status">Не удалось обновить список календарей <button @click=${this._load}>Повторить</button></div>`:nothing}
         ${!this._sources.length && !this._loading?html`<p class="empty">Нет подключённых календарей</p>`:nothing}

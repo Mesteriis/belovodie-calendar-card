@@ -55,6 +55,29 @@ export function normalizeEvents(raw,source,zone) {
   });
 }
 
+// Explicit receiver ranges use aware instants; absence of range attributes leaves
+// ordinary native calendars unbounded. Invalid/missing snapshot bounds fail closed.
+function awareMillis(value) {
+  if(typeof value!=='string' || !/(?:Z|[+-]\d{2}:\d{2})$/.test(value))return NaN;
+  return DateTime.fromISO(value).toMillis();
+}
+export function coverageForRange(status,range,zone) {
+  if(!status?.bounded)return 'complete';
+  const start=awareMillis(status.rangeStart),end=awareMillis(status.rangeEnd);
+  const from=DateTime.fromISO(range.start,{zone}).toMillis(),until=DateTime.fromISO(range.end,{zone}).toMillis();
+  if(!Number.isFinite(start) || !Number.isFinite(end) || start>=end || end<=from || start>=until)return 'none';
+  return start<=from && end>=until?'complete':'partial';
+}
+
+export function calendarWarnings(status,range,zone) {
+  const warnings=[];
+  if(status?.localHealth==='failed' || status?.localHealth==='missing')warnings.push(status.localHealth);
+  if(status?.stale)warnings.push('stale');
+  const coverage=coverageForRange(status,range,zone);
+  if(coverage!=='complete')warnings.push(coverage);
+  return warnings;
+}
+
 // Partial failures remain visible. A failed source never turns into an empty successful calendar.
 export async function fetchCalendars(hass,sources,range,zone) {
   // The native list contains loaded calendar entities; restored registry ghosts
@@ -66,8 +89,23 @@ export async function fetchCalendars(hass,sources,range,zone) {
     const existing=new Set(inventory.map(item=>item.entity_id));
     active=sources.filter(source=>existing.has(source.entity));
   } catch { inventoryFailed=true; }
-  const query=new URLSearchParams({start:range.start,end:range.end});
-  const results=await Promise.allSettled(active.map(async source=>normalizeEvents(await hass.callApi('GET',`calendars/${source.entity}?${query}`),source,zone)));
+  const statuses=Object.fromEntries(active.map(source=>{
+    const attributes=hass.states?.[source.entity]?.attributes || {};
+    const status={bounded:'range_start' in attributes || 'range_end' in attributes,
+      rangeStart:attributes.range_start,rangeEnd:attributes.range_end,
+      localHealth:attributes.local_health,stale:attributes.stale===true,
+      lastSuccessfulSync:attributes.last_successful_sync};
+    status.coverage=coverageForRange(status,range,zone);
+    return [source.entity,status];
+  }));
+  const results=await Promise.allSettled(active.map(async source=>{
+    const status=statuses[source.entity];
+    if(status.coverage==='none')return [];
+    const start=status.bounded && awareMillis(status.rangeStart)>DateTime.fromISO(range.start,{zone}).toMillis()?status.rangeStart:range.start;
+    const end=status.bounded && awareMillis(status.rangeEnd)<DateTime.fromISO(range.end,{zone}).toMillis()?status.rangeEnd:range.end;
+    const query=new URLSearchParams({start,end});
+    return normalizeEvents(await hass.callApi('GET',`calendars/${source.entity}?${query}`),source,zone);
+  }));
   return {events:results.flatMap(result=>result.status==='fulfilled'?result.value:[]),
-    failed:active.filter((_,i)=>results[i].status==='rejected').map(source=>source.entity),sources:active,inventoryFailed};
+    failed:active.filter((_,i)=>results[i].status==='rejected').map(source=>source.entity),sources:active,inventoryFailed,statuses};
 }
