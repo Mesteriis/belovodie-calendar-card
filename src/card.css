@@ -23,3 +23,6 @@ dialog{color:#dceef5;background:#102b38;border:1px solid #295368;border-radius:2
 .calendar-header h2{text-transform:none}.calendar-header h2::first-letter{text-transform:uppercase}
 
 .source{flex-wrap:wrap}.source-status{font-size:10px;line-height:1.3;color:#edbd61;background:#edbd6114;border-radius:6px;white-space:normal;max-width:230px;padding:2px 5px}.source-status time{white-space:nowrap}
+
+/* Clip departing rows without creating a horizontal scroll bar. */
+.agenda-row{overflow:hidden;display:flow-root;min-width:0}.agenda-scroll{overflow-x:hidden}

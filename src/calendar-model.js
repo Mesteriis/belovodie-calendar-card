@@ -14,13 +14,15 @@ export function validateConfig(config) {
     return {entity:source.entity,name:source.name || null,color:source.color || COLORS[index % COLORS.length]};
   });
   if (new Set(entities.map(e=>e.entity)).size !== entities.length) throw new Error('Duplicate calendar entity');
+  const animation=config.agenda_animation ?? 'none';
+  if(!['none','flight'].includes(animation))throw new Error('agenda_animation must be none or flight');
   const view=config.default_view || 'day';
   if (!VIEWS[view]) throw new Error('default_view must be day, week or month');
   const start=config.start_hour ?? 7, end=config.end_hour ?? 23;
   if (!Number.isInteger(start) || !Number.isInteger(end) || start<0 || end>24 || start>=end) throw new Error('Invalid hour range');
   const height=config.height ?? '600px';
   if (!(typeof height==='number' && height>=320) && !(typeof height==='string' && /^(?:100%|\d+(?:px|vh|dvh))$/.test(height))) throw new Error('Invalid height');
-  return {...config,entities,default_view:view,start_hour:start,end_hour:end,height:typeof height==='number'?`${height}px`:height};
+  return {...config,entities,agenda_animation:animation,default_view:view,start_hour:start,end_hour:end,height:typeof height==='number'?`${height}px`:height};
 }
 
 export function dayKey(date,zone) {
