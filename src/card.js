@@ -1,4 +1,6 @@
 import { LitElement,html,css,unsafeCSS,nothing } from 'lit';
+import { repeat } from 'lit/directives/repeat.js';
+import { agendaDelay,unfinishedEvents } from './agenda-motion.js';
 import { Calendar } from '@fullcalendar/core';
 import dayGrid from '@fullcalendar/daygrid';
 import timeGrid from '@fullcalendar/timegrid';
@@ -15,11 +17,11 @@ class BelovodieCalendarCard extends LitElement {
   static properties = { _config:{state:true},_view:{state:true},_selected:{state:true},_events:{state:true},_loading:{state:true},_failed:{state:true},_hidden:{state:true},_detail:{state:true},_revision:{state:true},_sources:{state:true},_inventoryFailed:{state:true},_statuses:{state:true} };
   static styles=[css`${unsafeCSS(vendorStyles)}`,css`${unsafeCSS(styles)}`];
   constructor() {
-    super();this._statuses={};this._events=[];this._failed=[];this._hidden=new Set();this._loading=false;this._requestId=0;this._revision=0;
-    this._onVisibility=()=>{if(document.visibilityState==='visible')this._load();};
+    super();this._agendaClock=Date.now();this._agendaMotions=new Map();this._statuses={};this._events=[];this._failed=[];this._hidden=new Set();this._loading=false;this._requestId=0;this._revision=0;
+    this._onVisibility=()=>{this._resetAgendaMotion();if(document.visibilityState==='visible'){this.requestUpdate();this._load();}};
   }
   setConfig(config) {
-    this._config=validateConfig(config);this._view=this._config.default_view;this._sources=this._config.entities;this._inventoryFailed=false;this._statuses={};
+    this._resetAgendaMotion();this._config=validateConfig(config);this._view=this._config.default_view;this._sources=this._config.entities;this._inventoryFailed=false;this._statuses={};
     this._resize?.disconnect();this._calendar?.destroy();this._calendar=null;this._range=null;this._requestId++;
     this._selected=dayKey(new Date(),this._zone());this._hidden=new Set();
     this.style.height=this._config.height;this.requestUpdate();
@@ -38,16 +40,55 @@ class BelovodieCalendarCard extends LitElement {
   _locale() { return this._config?.language || this._hass?.locale?.language || 'ru'; }
   _name(entity) {return this._config.entities.find(s=>s.entity===entity)?.name || this._hass?.states[entity]?.attributes?.friendly_name || entity;}
   connectedCallback() {
-    super.connectedCallback();
+    super.connectedCallback();this._agendaClock=Date.now();
     this._timer=setInterval(()=>{this._revision++;this._load();},300000);
     document.addEventListener('visibilitychange',this._onVisibility);
     this.updateComplete.then(()=>this._initialize());
   }
   disconnectedCallback() {
-    super.disconnectedCallback();clearInterval(this._timer);document.removeEventListener('visibilitychange',this._onVisibility);
+    this._resetAgendaMotion();super.disconnectedCallback();clearInterval(this._timer);document.removeEventListener('visibilitychange',this._onVisibility);
     this._resize?.disconnect();this._calendar?.destroy();this._calendar=null;this._requestId++;
   }
-  updated() { this._initialize(); }
+  updated() { this._initialize();this._scheduleAgendaMotion(); }
+  _resetAgendaMotion() {
+    clearTimeout(this._agendaTimer);
+    for(const animations of this._agendaMotions.values())for(const animation of animations)animation.cancel();
+    this._agendaMotions.clear();this._agendaClock=Date.now();
+  }
+  _scheduleAgendaMotion() {
+    clearTimeout(this._agendaTimer);
+    if(this._config?.agenda_animation!=='flight' || !this.isConnected || document.visibilityState!=='visible')return;
+    const rows=[...this.renderRoot.querySelectorAll('.agenda-row')].filter(row=>!this._agendaMotions.has(row));
+    const delay=agendaDelay(rows.map(row=>Number(row.dataset.end)),Date.now());
+    if(delay!==null)this._agendaTimer=setTimeout(()=>this._finishAgendaEvents(),delay);
+  }
+  _finishAgendaEvents() {
+    if(!this.isConnected || this._config?.agenda_animation!=='flight')return;
+    const now=Date.now(),reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+    for(const row of this.renderRoot.querySelectorAll('.agenda-row')) {
+      if(Number(row.dataset.end)>now || this._agendaMotions.has(row))continue;
+      const button=row.querySelector('button');
+      if(reduced || !row.getClientRects().length || document.visibilityState!=='visible')continue;
+      // layout height is in CSS pixels even when the dashboard uses CSS zoom.
+      const height=row.offsetHeight,options={duration:500,easing:'cubic-bezier(.22,.61,.36,1)',fill:'forwards'};
+      if(row.contains(this.renderRoot.activeElement)) {
+        const buttons=[...this.renderRoot.querySelectorAll('.agenda-row button')];
+        buttons.find(item=>Number(item.parentElement.dataset.end)>now)?.focus({preventScroll:true});
+      }
+      button.disabled=true;
+      const flight=button.animate([{transform:'translateX(0)',opacity:1},{transform:'translateX(115%)',opacity:0}],options);
+      const collapse=row.animate([{height:`${height}px`,offset:0},{height:`${height}px`,offset:.25},{height:'0px',offset:1}],options);
+      this._agendaMotions.set(row,[flight,collapse]);
+      Promise.all([flight.finished,collapse.finished]).then(()=>{
+        this._agendaMotions.delete(row);
+        if(!this.isConnected)return;
+        this._agendaClock=Date.now();
+        this.requestUpdate();
+      }).catch(()=>{}); // cancellation is expected on disconnect/config/visibility changes
+    }
+    this._agendaClock=now;this.requestUpdate();
+    this._scheduleAgendaMotion();
+  }
   _initialize() {
     const container=this.renderRoot.querySelector('#calendar');
     if (!container || this._calendar || !this._config || !this.isConnected) return;
@@ -74,6 +115,7 @@ class BelovodieCalendarCard extends LitElement {
     this._loading=true;
     const result=await fetchCalendars(this._hass,this._config.entities,{...this._range,end},zone);
     if (requestId!==this._requestId || !this.isConnected) return;
+    if(this._config.agenda_animation==='flight'){this._finishAgendaEvents();this._agendaClock=Date.now();}
     this._statuses=result.statuses;this._events=result.events;this._failed=result.failed;this._sources=result.sources;this._inventoryFailed=result.inventoryFailed;this._loading=false;this._applyEvents();
   }
   _applyEvents() {
@@ -100,15 +142,19 @@ class BelovodieCalendarCard extends LitElement {
     return day.toFormat('cccc, d MMMM yyyy');
   }
   _agenda(key,label) {
-    const events=eventsOnDay(this._events.filter(e=>!this._hidden.has(e.extendedProps.source)),key,this._zone());
+    let events=eventsOnDay(this._events.filter(e=>!this._hidden.has(e.extendedProps.source)),key,this._zone());
+    if(this._config.agenda_animation==='flight'){
+      const departing=new Set([...this._agendaMotions.keys()].map(row=>row.dataset.key));
+      events=events.filter(event=>unfinishedEvents([event],this._agendaClock).length || departing.has(`${key}:${event.id}`));
+    }
     const failed=this._failed.filter(entity=>!this._hidden.has(entity));
     const warnings=this._sources.filter(source=>!this._hidden.has(source.entity)).flatMap(source=>calendarWarnings(this._statuses[source.entity],dayRange(key,this._zone()),this._zone()));
     const emptyMessage=failed.length?'События части календарей недоступны':warnings.includes('none')?'Нет покрытия части календарей':warnings.includes('partial')?'Неполное покрытие дня':warnings.length?'Нет событий в сохранённой копии':'Нет событий';
-    return html`<section class="agenda-section"><h3>${label}</h3>${events.length?events.map(event=>html`
-      <button class="agenda-event ${event.endMs<Date.now()?'past':''}" @click=${()=>this._openEvent(event.id)}>
+    return html`<section class="agenda-section"><h3>${label}</h3>${events.length?repeat(events,event=>event.id,event=>html`
+      <div class="agenda-row" data-end=${event.endMs} data-key=${`${key}:${event.id}`}><button class="agenda-event ${this._config.agenda_animation==='none' && event.endMs<Date.now()?'past':''}" @click=${()=>this._openEvent(event.id)}>
         <span class="event-time">${this._time(event)}${event.allDay?nothing:html`<small>${DateTime.fromMillis(event.endMs,{zone:this._zone()}).toFormat('HH:mm')}</small>`}</span>
         <span class="event-copy" style=${`border-color:${event.extendedProps.color}`}><strong>${event.title}</strong><small>${this._name(event.extendedProps.source)}</small></span><ha-icon icon="mdi:chevron-right"></ha-icon>
-      </button>`):html`<p class="empty">${this._loading?'Загружаю события…':emptyMessage}</p>`}</section>`;
+      </button></div>`):html`<p class="empty">${this._loading?'Загружаю события…':emptyMessage}</p>`}</section>`;
   }
   _sourceStatus(source) {
     if(!this._range)return nothing;

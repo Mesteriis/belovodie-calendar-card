@@ -59,3 +59,14 @@ coverage are never presented as trustworthy empty calendars; the day agenda uses
 that day's coverage independently of the wider grid. Ordinary calendar integrations
 without explicit bounds keep their normal date queries. These states describe
 local exported data and do not establish cloud account freshness.
+
+## Compact agenda completion motion
+
+Opt in with `agenda_animation: flight` on the compact home agenda. Events already
+finished at first load are omitted. At the exclusive end instant (including
+all-day and overnight events), visible rows fly right and their space closes over
+500 ms. No calendar events are edited or deleted, and the full calendar grid is
+unchanged. Default `none` retains the original agenda with dimmed past events.
+Reduced-motion preference removes completed rows immediately. Hidden pages and
+reconnection reconcile current time without replaying old departures. The next
+end is scheduled locally, independently of the five-minute provider refresh.
